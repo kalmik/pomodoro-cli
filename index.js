@@ -6,7 +6,10 @@ const notifier = require('node-notifier');
 const progress = require('progress');
 const colors = require('colors');
 const program = require('commander');
+const EventEmitter = require('events');
 const pomodoro = require('./models/pomodoro');
+const mqtt = require('mqtt');
+const {  MQTT_URL, MQTT_USER, MQTT_PASS, GALILEO_PORT, TOPIC_PREFIX } = require('./config');
 
 program
   .version('0.0.4')
@@ -16,6 +19,27 @@ program
   .option('-t, --timer <time>', 'Add specific time in minutes', parseInt)
   .option('-a, --add-task <task>', 'Add a new task', 'task')
   .parse(process.argv);
+
+
+
+const mqttClient = mqtt.connect(MQTT_URL);
+const user_hash = `${MQTT_USER}:${MQTT_PASS}:${GALILEO_PORT}`;
+const mqttPublish = (topic, message, cb) => mqttClient.publish(topic, message, { qos: 2 }, cb);
+
+const pomodoroEmitter = new EventEmitter();
+
+pomodoroEmitter.on("pomodoro-start", () => {
+  mqttPublish(`${TOPIC_PREFIX}/join`, user_hash);
+  mqttPublish(`${TOPIC_PREFIX}/${user_hash}`, 'on');
+});
+
+pomodoroEmitter.on("pomodoro-end", () => {
+  mqttPublish(`${TOPIC_PREFIX}/leave`, user_hash, () => {
+    mqttClient.end();
+    process.exit(0);
+  });
+});
+
 
 const init = () => {
   let pomodoroConfig = {};
@@ -35,6 +59,7 @@ const init = () => {
     callback: notify
   });
 
+  pomodoroEmitter.emit("pomodoro-start");
   setInterval(() => {
     tick(bar);
   },1000);
@@ -77,7 +102,7 @@ const notify = () => {
     sound: 'true',
   });
 
-  process.exit(0);
+  pomodoroEmitter.emit("pomodoro-end");
 };
 
 init();
