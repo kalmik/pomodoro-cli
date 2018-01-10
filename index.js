@@ -7,6 +7,7 @@ const progress = require('progress');
 const colors = require('colors');
 const program = require('commander');
 const EventEmitter = require('events');
+const request = require('request');
 const pomodoro = require('./models/pomodoro');
 const mqtt = require('mqtt');
 const {  MQTT_URL, MQTT_USER, MQTT_PASS, GALILEO_PORT, TOPIC_PREFIX } = require('./config');
@@ -28,16 +29,53 @@ const mqttPublish = (topic, message, cb) => mqttClient.publish(topic, message, {
 
 const pomodoroEmitter = new EventEmitter();
 
+var slackInterval = null;
+var bar = null;
+
+var slackStatus = function() {
+  var data = {
+    "token": "",
+    "profile": JSON.stringify({
+      "status_text": "Busy, Avaliable in " + Math.floor((bar.total - bar.curr)/61) + " Minutes",
+      "status_emoji": ":red_circle:"
+    })
+  };
+  request.post('https://slack.com/api/users.profile.set', {form: data});
+};
+
+var slackStatusAvailable = function() {
+  var data = {
+    "token": "",
+    "profile": JSON.stringify({
+      "status_text": "Available",
+      "status_emoji": ":large_blue_circle:"
+    })
+  };
+  request.post('https://slack.com/api/users.profile.set', {form: data}, () => {process.exit(0)});
+};
+
+process.on( "SIGINT", function() {
+  console.log("Exiting...")
+  pomodoroEmitter.emit("pomodoro-end");
+} );
+
 pomodoroEmitter.on("pomodoro-start", () => {
   mqttPublish(`${TOPIC_PREFIX}/join`, user_hash);
   mqttPublish(`${TOPIC_PREFIX}/${user_hash}`, 'on');
+  slackStatus();
+  slackInterval = setInterval(slackStatus, 60 * 1000);
 });
 
 pomodoroEmitter.on("pomodoro-end", () => {
   mqttPublish(`${TOPIC_PREFIX}/leave`, user_hash, () => {
     mqttClient.end();
-    process.exit(0);
   });
+
+  if (slackInterval) {
+    clearInterval(slackInterval);
+  }
+
+  slackStatusAvailable();
 });
 
 
@@ -49,7 +87,7 @@ const init = () => {
   pomodoro.setTimer(pomodoroConfig.time, 'minutes');
   pomodoro.setMessage(pomodoroConfig.message);
 
-  var bar = new progress(':timerFrom [:bar] :timerTo'.red, {
+  bar = new progress(':timerFrom [:bar] :timerTo'.red, {
     complete: '=',
     incomplete: ' ',
     width: 50,
