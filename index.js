@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const notifier = require('node-notifier');
 const progress = require('progress');
@@ -10,7 +11,7 @@ const EventEmitter = require('events');
 const request = require('request');
 const pomodoro = require('./models/pomodoro');
 const mqtt = require('mqtt');
-const {  MQTT_URL, MQTT_USER, MQTT_PASS, GALILEO_PORT, TOPIC_PREFIX } = require('./config');
+const {  MQTT_URL, MQTT_USER, MQTT_PASS, GALILEO_PORT, TOPIC_PREFIX, SLACK_TOKEN } = require('./config');
 
 program
   .version('0.0.4')
@@ -29,14 +30,16 @@ const mqttPublish = (topic, message, cb) => mqttClient.publish(topic, message, {
 
 const pomodoroEmitter = new EventEmitter();
 
+const day_path = "/Users/sergiofilipe/tasks/" + new Date().toLocaleDateString().replace(/\//g, '-') + ".txt";
+
 var slackInterval = null;
 var bar = null;
 
 var slackStatus = function() {
   var data = {
-    "token": "",
+    "token": SLACK_TOKEN,
     "profile": JSON.stringify({
-      "status_text": "Busy, Avaliable in " + Math.floor((bar.total - bar.curr)/61) + " Minutes",
+      "status_text": "Busy, Avaliable in " + Math.floor((bar.total - bar.curr)/61) + " Minutes - " + pomodoro.getMessage(),
       "status_emoji": ":red_circle:"
     })
   };
@@ -45,13 +48,17 @@ var slackStatus = function() {
 
 var slackStatusAvailable = function() {
   var data = {
-    "token": "",
+    "token": SLACK_TOKEN,
     "profile": JSON.stringify({
       "status_text": "Available",
       "status_emoji": ":large_blue_circle:"
     })
   };
   request.post('https://slack.com/api/users.profile.set', {form: data}, () => {process.exit(0)});
+  var data = {
+    "token": SLACK_TOKEN,
+  }
+  request.post('https://slack.com/api/dnd.endSnooze', {form: data})
 };
 
 process.on( "SIGINT", function() {
@@ -64,6 +71,11 @@ pomodoroEmitter.on("pomodoro-start", () => {
   mqttPublish(`${TOPIC_PREFIX}/${user_hash}`, 'on');
   slackStatus();
   slackInterval = setInterval(slackStatus, 60 * 1000);
+  var data = {
+    "token": SLACK_TOKEN,
+    "num_minutes": Math.floor(bar.total/61)
+  }
+  request.post('https://slack.com/api/dnd.setSnooze', {form: data})
 });
 
 pomodoroEmitter.on("pomodoro-end", () => {
@@ -103,6 +115,24 @@ const init = () => {
   },1000);
 };
 
+const addTask = (task) => {
+
+let buffer = new Buffer(new Date().toLocaleTimeString() + " " + task + "\n");
+
+// open the file in writing mode, adding a callback function where we do the actual writing
+fs.open(day_path, 'a+', function(err, fd) {
+    if (err) {
+        throw 'could not open file: ' + err;
+    }
+
+    // write the contents of the buffer, from position 0 to the end, to the file descriptor returned in opening our file
+    fs.write(fd, buffer, 0, buffer.length, null, function(err) {
+        if (err) throw 'error writing file: ' + err;
+        fs.close(fd);
+    });
+});
+}
+
 const getTimeToPomodoro = () => {
   let pomodoroConfig = {};
 
@@ -118,6 +148,10 @@ const getTimeToPomodoro = () => {
   } else {
     pomodoroConfig.time = 25;
     pomodoroConfig.message = 'Go ahead, take a break, you earned it!';
+  }
+  if(program.addTask) {
+    pomodoroConfig.message = program.addTask;
+    addTask(program.addTask);
   }
 
   return pomodoroConfig;
