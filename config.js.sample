@@ -1,0 +1,9 @@
+module.exports = {
+  "MQTT_URL": "",
+  "MQTT_USER": "",
+  "MQTT_PASS": "",
+  "TOPIC_PREFIX": "",
+  "SLACK_TOKEN": ""
+  "TASKS_PATH": ""
+
+

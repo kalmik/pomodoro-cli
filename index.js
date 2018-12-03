@@ -11,7 +11,7 @@ const EventEmitter = require('events');
 const request = require('request');
 const pomodoro = require('./models/pomodoro');
 const mqtt = require('mqtt');
-const {  MQTT_URL, MQTT_USER, MQTT_PASS, GALILEO_PORT, TOPIC_PREFIX, SLACK_TOKEN } = require('./config');
+const {  MQTT_URL, MQTT_USER, MQTT_PASS, GALILEO_PORT, TOPIC_PREFIX, SLACK_TOKEN, TASKS_PATH } = require('./config');
 
 program
   .version('0.0.4')
@@ -30,7 +30,7 @@ const mqttPublish = (topic, message, cb) => mqttClient.publish(topic, message, {
 
 const pomodoroEmitter = new EventEmitter();
 
-const day_path = "/Users/sergiofilipe/tasks/" + new Date().toLocaleDateString().replace(/\//g, '-') + ".txt";
+const day_path = TASKS_PATH + new Date().toLocaleDateString().replace(/\//g, '-') + ".txt";
 
 var slackInterval = null;
 var bar = null;
